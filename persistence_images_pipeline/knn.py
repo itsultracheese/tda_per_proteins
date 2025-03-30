@@ -19,47 +19,40 @@ def set_seeds(seed=42):
 def load_protein_vectors(data_dir):
     data = {}
     files = os.listdir(data_dir)
-    for file in tqdm(files, desc="Loading protein vectors"):
-        if file.endswith(".npy") or file.endswith(".npz"):
+
+    for file in tqdm(files):
+        if file.endswith(".npy"):
             file_id = os.path.splitext(file)[0]
             file_path = os.path.join(data_dir, file)
-            try:
-                vector = np.load(file_path)["images"]
-            except:
-                vector = np.load(file_path)
 
-            n_layers = 1
-            vector = np.array(
-                [vector[i] for i in range(len(vector) - 20 * n_layers, len(vector))]
-            )
-            vector = vector.flatten()
-
+            vector = np.load(file_path)
             data[file_id] = vector
+
     return data
 
 
 def load_labels(labels_dir):
     labels = {}
     files = os.listdir(labels_dir)
+
     for file in tqdm(files, desc="Loading labels"):
         if file.endswith(".npz"):
             file_id = os.path.splitext(file)[0]
             file_path = os.path.join(labels_dir, file)
-            try:
-                label_data = np.load(file_path)
-                labels[file_id] = {
-                    "MF": label_data["MF"],
-                    "BP": label_data["BP"],
-                    "CC": label_data["CC"],
-                }
-            except Exception as e:
-                print(f"Error loading {file_path}: {e}")
+
+            label_data = np.load(file_path)
+            labels[file_id] = {
+                "MF": label_data["MF"],
+                "BP": label_data["BP"],
+                "CC": label_data["CC"],
+            }
+
     print(f"Loaded {len(labels)} label files")
     return labels
 
 
 def get_common_ids(protein_data, label_data):
-    protein_ids = set(protein_data.keys())
+    protein_ids = set([x.split("_")[2] for x in protein_data.keys()])
     label_ids = set(label_data.keys())
     return list(protein_ids.intersection(label_ids))
 
@@ -106,30 +99,30 @@ def train_and_evaluate_knn(X_train, y_train, X_test, y_test, label_name: str):
     knn = MultiOutputClassifier(KNeighborsClassifier(n_jobs=-1))
     knn.fit(X_train, y_train)
     preds = knn.predict_proba(X_test)
-    if preds.shape[1] == 2:
-        preds = preds[:, 1]
+    preds = np.array(
+        [float(p[0][1]) if p[0].shape[0] > 1 else 1 - float(p[0][0]) for p in preds]
+    )
     preds = preds.reshape(-1, 1)
     y_test = y_test.reshape(-1, 1)
     f1 = count_f1_max(preds, y_test)
-    print(f"F1 for {label_name} using ICA+KNN: {f1:.4f}\n")
+    print(f"F1 for {label_name} using KNN: {f1:.4f}")
     return knn, f1
 
 
 def main():
     set_seeds(42)
+
     protein_dir = "/valid"
     label_dir = "./validation"
 
     protein_data = load_protein_vectors(protein_dir)
     label_data = load_labels(label_dir)
     common_ids = get_common_ids(protein_data, label_data)
-    print(f"{len(common_ids)} samples with both protein vectors and labels")
 
-    X = np.array([protein_data[_id] for _id in common_ids])
+    X = np.array([protein_data[f"persistence_image_{_id}"] for _id in common_ids])
     y_MF = np.array([label_data[_id]["MF"] for _id in common_ids])
     y_BP = np.array([label_data[_id]["BP"] for _id in common_ids])
     y_CC = np.array([label_data[_id]["CC"] for _id in common_ids])
-
     results_MF = []
     results_BP = []
     results_CC = []
@@ -156,12 +149,14 @@ def main():
     avg_f1_MF = np.mean(results_MF)
     avg_f1_BP = np.mean(results_BP)
     avg_f1_CC = np.mean(results_CC)
+
     std_f1_MF = np.std(results_MF)
     std_f1_BP = np.std(results_BP)
     std_f1_CC = np.std(results_CC)
+
     print(f"  MF: Average F1 = {avg_f1_MF:.4f} (std = {std_f1_MF:.4f})")
     print(f"  BP: Average F1 = {avg_f1_BP:.4f} (std = {std_f1_BP:.4f})")
-    print(f"  CC: Average F1 = {avg_f1_CC:.4f} (std = {std_f1_CC:.4f})\n")
+    print(f"  CC: Average F1 = {avg_f1_CC:.4f} (std = {std_f1_CC:.4f})")
 
 
 if __name__ == "__main__":

@@ -17,7 +17,6 @@ def set_seeds(seed=42):
 def load_protein_vectors(data_dir):
     data = {}
     files = os.listdir(data_dir)
-
     for file in tqdm(files, desc="Loading protein vectors"):
         if file.endswith(".npy") or file.endswith(".npz"):
             file_id = os.path.splitext(file)[0]
@@ -26,13 +25,12 @@ def load_protein_vectors(data_dir):
                 vector = np.load(file_path)["images"]
             except:
                 vector = np.load(file_path)
-
-            # taking only the last 20 entries (for example, last attention layers)
+            
+            # taking only the last 20 entries (e.g., last attention layers)
             n_layers = 1
             vector = np.array(
                 [vector[i] for i in range(len(vector) - 20 * n_layers, len(vector))]
             )
-
             vector = vector.flatten()
             data[file_id] = vector
     return data
@@ -41,7 +39,6 @@ def load_protein_vectors(data_dir):
 def load_labels(labels_dir):
     labels = {}
     files = os.listdir(labels_dir)
-
     for file in tqdm(files, desc="Loading labels"):
         if file.endswith(".npz"):
             file_id = os.path.splitext(file)[0]
@@ -55,12 +52,11 @@ def load_labels(labels_dir):
                 }
             except Exception as e:
                 print(f"Error loading {file_path}: {e}")
-    print(f"Loaded {len(labels)} label files")
     return labels
 
 
 def get_common_ids(protein_data, label_data):
-    protein_ids = set(protein_data.keys())
+    protein_ids = set([x.split("_")[2] for x in protein_data.keys()])
     label_ids = set(label_data.keys())
     return list(protein_ids.intersection(label_ids))
 
@@ -82,8 +78,7 @@ def count_f1_max(pred, target) -> float:
         order
         + torch.arange(order.shape[0], device=order.device).unsqueeze(1)
         * order.shape[1]
-    )
-    order = order.flatten()
+    ).flatten()
     inv_order = torch.zeros_like(order)
     inv_order[order] = torch.arange(order.shape[0], device=order.device)
     is_start = is_start.flatten()[all_order]
@@ -133,22 +128,19 @@ def main():
     set_seeds(42)
 
     protein_dir = "/valid"
-    protein_dir = "/images"
     label_dir = "./validation"
 
     protein_data = load_protein_vectors(protein_dir)
     label_data = load_labels(label_dir)
-
     common_ids = get_common_ids(protein_data, label_data)
-    print(f"{len(common_ids)} samples with both protein vectors and labels")
 
-    X = np.array([protein_data[_id] for _id in common_ids])
+    X = np.array([protein_data[f"persistence_image_{_id}"] for _id in common_ids])
     y_MF = np.array([label_data[_id]["MF"] for _id in common_ids])
     y_BP = np.array([label_data[_id]["BP"] for _id in common_ids])
     y_CC = np.array([label_data[_id]["CC"] for _id in common_ids])
 
     lrs = [0.1, 0.05, 0.5]
-
+    
     results_MF = {lr: [] for lr in lrs}
     results_BP = {lr: [] for lr in lrs}
     results_CC = {lr: [] for lr in lrs}
@@ -157,7 +149,6 @@ def main():
     fold = 1
     for train_idx, test_idx in kf.split(X):
         print(f"\nFold {fold}/{kf.get_n_splits()}")
-
         X_train, X_test = X[train_idx], X[test_idx]
         y_MF_train, y_MF_test = y_MF[train_idx], y_MF[test_idx]
         y_BP_train, y_BP_test = y_BP[train_idx], y_BP[test_idx]
@@ -165,7 +156,6 @@ def main():
 
         for lr in lrs:
             print(f"\n-- Learning Rate: {lr} --")
-
             _, f1_MF = train_and_evaluate_pyboost(
                 X_train, y_MF_train, X_test, y_MF_test, "MF", lr
             )
@@ -175,7 +165,6 @@ def main():
             _, f1_CC = train_and_evaluate_pyboost(
                 X_train, y_CC_train, X_test, y_CC_test, "CC", lr
             )
-
             results_MF[lr].append(f1_MF)
             results_BP[lr].append(f1_BP)
             results_CC[lr].append(f1_CC)
